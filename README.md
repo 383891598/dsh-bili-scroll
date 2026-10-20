@@ -108,7 +108,7 @@ dsh plugin --profile web add github:c1overzz/dsh-bili-scroll   # 备选：直接
 }
 ```
 
-将图片放进同目录的 `stickers/`（也可以把 `directory` 设为后端 Python 可读取的绝对路径）。`default` 必须是库内实际存在的图片文件名，用于模型漏选时的中性兜底。图片由使用者自行提供，本仓库不附带表情包或人设。
+将图片放进同目录的 `stickers/`（也可以把 `directory` 设为后端 Python 可读取的绝对路径）。`default` 必须是库内实际存在的图片文件名，用于模型漏选时的中性兜底。可自行提供图片，也可使用源码附带的 [DS 大肥鱼表情包（180 张原图）](assets/DS表情包/使用说明.md)，按目录内示例配置接入。素材约 122 MiB，仅随 GitHub 源码提供，不纳入默认 npm 插件包；来源和署名见素材说明与 [NOTICE.md](NOTICE.md)。
 
 - 支持 PNG、JPEG、WebP、GIF。评论上传副本转为最长边 768 像素的 PNG；GIF 使用静态首帧，原文件不改。
 - 文件名可用「情绪_内容」，如 `开心_比耶.png`、`安慰_抱抱.webp`。普通图片目录即可使用，不强制建立索引。
