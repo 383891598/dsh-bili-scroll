@@ -620,15 +620,18 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, sticker
         rpid: 要回复的目标评论ID（0表示发表新评论）
         root: 楼层根评论ID（回复一级评论时不用填，回复楼中楼时填根评论ID）
         sticker: bili_stickers 返回的 filename（优先）或精确情绪。配置配图库后漏传用 default 图。
-                 未配置且不传时保持纯文本；配置后主评论/楼中楼均同条附一张图，GIF 使用静态首帧。
+                 只对顶层评论生效，GIF 使用静态首帧。未配置且不传时保持纯文本。
+                 B站子评论不能带图：rpid!=0 时不读取图库、不上传图片，回执说明跳过原因。
     
     Returns:
         发表结果
     """
     stage = "prepare"
     try:
-        data = _sticker_catalog()
-        if data is None and str(sticker or "").strip():
+        is_reply = rpid != 0
+        # Bilibili rejects pictures on child replies with -400. Choose text-only before any image work.
+        data = None if is_reply else _sticker_catalog()
+        if not is_reply and data is None and str(sticker or "").strip():
             raise ValueError("请先在插件数据目录配置 comment-stickers.json，再选择图片")
         selected = None
         with ExitStack() as stack:
@@ -650,7 +653,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, sticker
             args = dict(text=text, oid=info["aid"], type_=comment.CommentResourceType.VIDEO, credential=cred)
             if picture is not None:
                 args["pic"] = picture
-            if rpid != 0:
+            if is_reply:
                 args.update(root=root if root != 0 else rpid, parent=rpid)
             # Text and picture share one comment request. Never retry or downgrade a failed image send.
             stage = "send"
@@ -660,7 +663,10 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, sticker
         #    （lib/verify.mjs）也要拿它去 B站 查公开可见性。只回 success 的话那条链是断的。
         #（2026-10-16 审查修：原实现把上面的 result 丢掉了）
         out = {"success": True, "message": "评论发送成功"}
-        if selected is not None:
+        if is_reply:
+            out.update(message="楼中楼纯文本回复已接收", sticker="",
+                       sticker_skip_reason="bilibili_child_reply_no_images")
+        elif selected is not None:
             out.update(sticker=selected["filename"], sticker_emotion=selected["emotion"],
                        sticker_rendering="gif_first_frame" if source_animated else "static_png")
         if isinstance(result, dict):

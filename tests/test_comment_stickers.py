@@ -75,6 +75,8 @@ class OfflineTests(unittest.IsolatedAsyncioTestCase):
                     return dict(image_url='https://offline.invalid/picture.png', image_width=dimensions[0],
                                 image_height=dimensions[1], img_size=len(self_bytes)/1024)
                 outer.posts.append(dict(self.data))
+                if self.data.get('root') and self.data.get('pictures'):
+                    raise RuntimeError('-400: 子评论不能带图')
                 if outer.post_error: raise outer.post_error
                 return dict(rpid=99001 + len(outer.posts), rpid_str=str(99001 + len(outer.posts)),
                             root=self.data.get('root', 0), parent=self.data.get('parent', 0))
@@ -95,20 +97,48 @@ class OfflineTests(unittest.IsolatedAsyncioTestCase):
     def assert_clean(self):
         for upload in self.uploads: self.assertFalse(Path(upload['path']).exists())
 
-    async def test_main_reply_and_nested_reply_real_api_payload(self):
-        for args in [{}, dict(rpid=71), dict(rpid=72, root=70)]:
-            result = await self.send(sticker='开心_笑.webp', **args)
-            self.assertTrue(result['success'], result)
-            self.assertEqual(result['sticker'], '开心_笑.webp')
-            self.assertIn('rpid', result)
-        self.assertEqual(len(self.uploads), 3); self.assertEqual(len(self.posts), 3)
-        for post in self.posts:
-            self.assertEqual(post['message'], '@测试 主人，诶这条好玩呀 (｡･ω･｡)\n@朋友 来看看')
-            self.assertEqual(len(json.loads(post['pictures'])), 1)
+    async def test_main_comment_uploads_one_picture_and_keeps_receipt(self):
+        result = await self.send(sticker='开心_笑.webp')
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['sticker'], '开心_笑.webp')
+        self.assertIn('rpid', result)
+        self.assertEqual(len(self.uploads), 1); self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.posts[0]['message'], '@测试 主人，诶这条好玩呀 (｡･ω･｡)\n@朋友 来看看')
+        self.assertEqual(len(json.loads(self.posts[0]['pictures'])), 1)
         self.assertNotIn('root', self.posts[0]); self.assertNotIn('parent', self.posts[0])
-        self.assertEqual((self.posts[1]['root'], self.posts[1]['parent']), (71, 71))
-        self.assertEqual((self.posts[2]['root'], self.posts[2]['parent']), (70, 72))
         self.assert_clean()
+
+    async def test_child_replies_are_text_only_and_preserve_receipts(self):
+        for args in [dict(rpid=71), dict(rpid=72, root=70)]:
+            for sticker in ['', '开心_笑.webp', '../missing.png']:
+                result = await self.send(sticker=sticker, **args)
+                self.assertTrue(result['success'], result)
+                self.assertEqual(result['sticker'], '')
+                self.assertEqual(result['sticker_skip_reason'], 'bilibili_child_reply_no_images')
+                self.assertEqual(result['parent'], args['rpid'])
+                self.assertEqual(result['root'], args.get('root', args['rpid']))
+                self.assertEqual(result['rpid_str'], str(result['rpid']))
+        self.assertEqual(len(self.posts), 6); self.assertEqual(self.uploads, [])
+        for post in self.posts:
+            self.assertNotIn('pictures', post)
+            self.assertEqual(post['message'], '@测试 主人，诶这条好玩呀 (｡･ω･｡)\n@朋友 来看看')
+
+    async def test_child_replies_do_not_read_sticker_configuration(self):
+        self.config.write_text('{', encoding='utf8')
+        with patch.object(server, '_sticker_catalog', side_effect=AssertionError('reply must not read the image library')):
+            result = await self.send(rpid=72, root=70, sticker='missing.png')
+        self.assertTrue(result['success'], result)
+        self.config.unlink()
+        self.assertTrue((await self.send(rpid=71, sticker='missing.png'))['success'])
+        self.assertEqual(len(self.posts), 2); self.assertEqual(self.uploads, [])
+
+    async def test_child_reply_timeout_is_never_retried(self):
+        self.post_error = TimeoutError('offline result unknown')
+        result = await self.send(rpid=72, root=70, sticker='开心_笑.webp')
+        self.assertFalse(result['success']); self.assertFalse(result['retry_safe'])
+        self.assertEqual(result['stage'], 'send')
+        self.assertEqual(len(self.posts), 1); self.assertEqual(self.uploads, [])
+        self.assertNotIn('pictures', self.posts[0])
 
     async def test_missing_argument_defaults_and_emotion_selection(self):
         default = await self.send(); self.assertEqual(default['sticker'], '乖巧_等你.png')
@@ -180,7 +210,10 @@ class OfflineTests(unittest.IsolatedAsyncioTestCase):
         for args in [{}, dict(rpid=71), dict(rpid=72, root=70)]:
             result = await self.send(**args)
             self.assertTrue(result['success'], result)
-            self.assertNotIn('sticker', result)
+            if args:
+                self.assertEqual(result['sticker'], '')
+            else:
+                self.assertNotIn('sticker', result)
         self.assertEqual(self.uploads, []); self.assertEqual(len(self.posts), 3)
         self.assertTrue(all('pictures' not in row for row in self.posts))
         catalog = json.loads(await server.bili_stickers())

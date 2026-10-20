@@ -523,13 +523,13 @@ export function apply(ctx, config) {
     description: '在视频下发评论（或回复某条评论）。这就是"@ 本人"那一下：短、干净、纯文本 @ 写在正文里。\n'
       + '🔴 安全闸：设置页的「自动评论并 @ 你」**默认是关的**；关着的时候这个工具会拒绝 —— '
       + '除非本人当场让你发（那时传 force: true）。'
-      + '配置评论配图后，同条附一张图；可先用 bili_stickers 选图再传 sticker。',
+      + '配置配图后仅顶层评论同条附一张图；可先用 bili_stickers 选图再传 sticker。B站子评论不能带图，回复时只发文本。',
     parameters: {
       bvid: { type: 'string', description: 'BV号' },
       text: { type: 'string', description: '评论正文（短、干净、纯文本 @；别写敏感词）' },
       rpid: { type: 'number', description: '要回复的评论 id（0/不填 = 发新评论）' },
       root: { type: 'number', description: '回复楼中楼时的根评论ID' },
-      sticker: { type: 'string', description: 'bili_stickers 返回的 filename（优先）或精确情绪；配图启用后漏传用默认图' },
+      sticker: { type: 'string', description: '仅顶层评论：bili_stickers 返回的 filename 或精确情绪，启用后漏传用默认图；子评论不使用图片并返回跳过原因' },
       force: { type: 'boolean', description: '本人当场让你发的，传 true 越过"自动评论关着"的闸' },
     },
     async execute(args) {
@@ -909,9 +909,10 @@ export function apply(ctx, config) {
           ? '关着的 —— 当前是「**只私信**」模式：**这一轮一条公开评论都不许发**，改走私信'
           : '关着的（只写报告，别发评论）')}。`
       + (existsSync(join(stateDir, 'comment-stickers.json'))
-        ? `评论配图：已启用。主评论和楼中楼都先用 bili_stickers 按情绪/内容找真实 filename，`
+        ? `评论配图：已启用，仅顶层评论先用 bili_stickers 按情绪/内容找真实 filename，`
           + `再传 bili_reply 的 sticker 参数；没有合适台词时可留空使用默认中性图。`
-          + `文字和图片在同一条评论发送，不把文件名、路径或图片占位符写进正文，也不另发补图评论。`
+          + `顶层文字和图片在同一条评论发送；B站子评论不能带图，回复时不选图、不传 sticker，只发文本。`
+          + `不把文件名、路径或图片占位符写进正文，也不另发补图评论。`
           + `图片或发送失败如实记报告；stage=send 可能结果未知，先核楼，不能直接重复发布。`
         : '')
       + (dmOn
